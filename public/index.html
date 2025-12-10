@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <title>技术博客</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<link rel="stylesheet" href="/style.css">
+  <!-- Markdown -->
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto;
+      background: #f7f8fa;
+      color: #222;
+
+      /* ✅ 关键 */
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+  }
+
+
+    header {
+      height: 56px;
+      background: #1f2937;
+      color: #fff;
+      display: flex;
+      align-items: center;
+      padding: 0 24px;
+      justify-content: space-between;
+    }
+
+    header h1 {
+      font-size: 16px;
+      font-weight: 500;
+    }
+
+    header a {
+      color: #9ca3af;
+      font-size: 14px;
+      text-decoration: none;
+    }
+
+    main {
+     display: flex;
+  flex: 1;          /* ✅ 占满 footer 以上的剩余空间 */
+    }
+
+    /* 左侧文章列表 */
+    aside {
+      width: 260px;
+      background: #fff;
+      border-right: 1px solid #e5e7eb;
+      padding: 16px;
+      overflow-y: auto;
+    }
+
+    .post-item {
+      padding: 10px 12px;
+      border-radius: 6px;
+      cursor: pointer;
+      margin-bottom: 4px;
+      font-size: 14px;
+    }
+
+    .post-item:hover { background: #f3f4f6; }
+    .post-item.active { background: #e5e7eb; font-weight: 500; }
+
+    /* 内容区 */
+    section {
+      flex: 1;
+      overflow-y: auto;
+      padding: 40px;
+      background: #fff;
+    }
+
+    article {
+      max-width: 860px;
+      margin: 0 auto;
+    }
+
+    article img {
+      max-width: 100%;
+    }
+
+    pre {
+      background: #f3f4f6;
+      padding: 16px;
+      border-radius: 8px;
+      overflow-x: auto;
+    }
+
+    code {
+      background: #eee;
+      padding: 2px 4px;
+      border-radius: 4px;
+    }
+
+    blockquote {
+      border-left: 4px solid #e5e7eb;
+      padding-left: 12px;
+      color: #666;
+      margin: 16px 0;
+    }
+
+    h1 {
+      border-bottom: 1px solid #e5e7eb;
+      padding-bottom: 10px;
+    }
+
+    /* 右侧 TOC */
+    nav {
+      width: 240px;
+      border-left: 1px solid #e5e7eb;
+      background: #fafafa;
+      padding: 16px;
+      overflow-y: auto;
+      font-size: 13px;
+    }
+
+    nav h3 {
+      font-size: 14px;
+      margin-top: 0;
+    }
+
+    .toc a {
+      display: block;
+      color: #374151;
+      text-decoration: none;
+      padding: 4px 0;
+      padding-left: calc(var(--lv) * 12px);
+    }
+
+    .toc a:hover { color: #2563eb; }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>技术博客</h1>
+  <a href="/admin.html">[ 管理入口 ]</a>
+</header>
+
+<main>
+  <aside id="list"></aside>
+
+  <section>
+    <article id="content"></article>
+  </section>
+
+  <nav>
+    <h3>目录</h3>
+    <div id="toc" class="toc"></div>
+  </nav>
+</main>
+
+<footer class="site-footer">
+  <a href="https://beian.miit.gov.cn/" target="_blank">
+    沪ICP备 XXXXXXXX号-1
+  </a>
+</footer>
+
+<script>
+let posts = [];
+let currentId = null;
+
+// =========== 加载文章列表 ===========
+async function loadPosts() {
+  const res = await fetch("/api/posts");
+  posts = await res.json();
+
+  const list = document.getElementById("list");
+  list.innerHTML = "";
+
+  posts.forEach(p => {
+    const div = document.createElement("div");
+    div.className = "post-item";
+    div.textContent = p.title;
+    div.onclick = () => openPost(p.id);
+    if (p.id === currentId) div.classList.add("active");
+    list.appendChild(div);
+  });
+
+  if (posts.length && !currentId) openPost(posts[0].id);
+}
+
+// =========== 渲染文章 ===========
+async function openPost(id) {
+  currentId = id;
+  const post = posts.find(p => p.id === id);
+  if (!post) return;
+
+  const content = document.getElementById("content");
+
+  // Markdown → HTML
+  const html = `
+    <h1>${post.title}</h1>
+    <div style="color:#999;font-size:14px;margin-bottom:30px;">${post.createdAt || ""}</div>
+    ${marked.parse(post.content)}
+  `;
+
+  content.innerHTML = html;
+
+  generateTOC();
+  highlight();
+}
+
+// =========== 生成 TOC ===========
+function generateTOC() {
+  const toc = document.getElementById("toc");
+  toc.innerHTML = "";
+  const headings = document.querySelectorAll("article h2, article h3");
+
+  headings.forEach(h => {
+    if (!h.id) {
+      h.id = h.textContent.trim().replace(/[^\w]+/g, "-");
+    }
+    const a = document.createElement("a");
+    a.href = "#" + h.id;
+    a.textContent = h.textContent;
+    a.style.setProperty("--lv", h.tagName === "H3" ? 1 : 0);
+    toc.appendChild(a);
+  });
+}
+
+// =========== 左侧高亮 ===========
+function highlight() {
+  document.querySelectorAll(".post-item").forEach(i => i.classList.remove("active"));
+  const i = posts.findIndex(p => p.id === currentId);
+  if (i >= 0) document.querySelectorAll(".post-item")[i].classList.add("active");
+}
+
+// 启动
+loadPosts();
+</script>
+
+</body>
+</html>

@@ -1,0 +1,328 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <title>博客后台管理</title>
+<link rel="stylesheet" href="/style.css">
+  <!-- Markdown -->
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: #f6f7f9;
+      color: #222;
+    }
+
+    header {
+      height: 56px;
+      background: #1f2937;
+      color: #fff;
+      display: flex;
+      align-items: center;
+      padding: 0 24px;
+      justify-content: space-between;
+    }
+
+    header h1 {
+      font-size: 16px;
+      font-weight: 500;
+    }
+
+    header button {
+      background: #374151;
+      border: none;
+      color: #fff;
+      padding: 6px 14px;
+      border-radius: 6px;
+      cursor: pointer;
+    }
+
+    main {
+      display: flex;
+      height: calc(100vh - 56px);
+    }
+
+    aside {
+      width: 260px;
+      border-right: 1px solid #e5e7eb;
+      background: #fff;
+      padding: 16px;
+      overflow-y: auto;
+    }
+
+    .post-item {
+      padding: 10px;
+      border-radius: 6px;
+      cursor: pointer;
+      margin-bottom: 4px;
+    }
+
+    .post-item:hover { background: #f3f4f6; }
+    .post-item.active { background: #e5e7eb; }
+
+    section {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .toolbar {
+      display: flex;
+      gap: 8px;
+      padding: 12px;
+      border-bottom: 1px solid #e5e7eb;
+      background: #fff;
+    }
+
+    .toolbar button {
+      border: 1px solid #d1d5db;
+      background: #fff;
+      border-radius: 6px;
+      padding: 6px 10px;
+      cursor: pointer;
+    }
+
+    .editor {
+      flex: 1;
+      display: flex;
+    }
+
+    textarea {
+      width: 50%;
+      border: none;
+      padding: 20px;
+      font-family: monospace;
+      font-size: 14px;
+      outline: none;
+      resize: none;
+      border-right: 1px solid #e5e7eb;
+    }
+
+    .preview {
+      width: 50%;
+      padding: 20px;
+      overflow-y: auto;
+      background: #fff;
+    }
+
+    input.title {
+      width: 100%;
+      border: none;
+      font-size: 20px;
+      padding: 12px 20px;
+      border-bottom: 1px solid #e5e7eb;
+      outline: none;
+      background: #fff;
+    }
+
+    .login-mask {
+      position: fixed;
+      inset: 0;
+      background: rgba(255,255,255,0.95);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .login-box {
+      background: #fff;
+      border-radius: 12px;
+      padding: 30px;
+      width: 320px;
+      box-shadow: 0 10px 30px rgba(0,0,0,.1);
+    }
+
+    .login-box input {
+      width: 100%;
+      margin-top: 12px;
+      padding: 8px;
+    }
+
+    .login-box button {
+      width: 100%;
+      margin-top: 16px;
+      padding: 8px;
+    }
+
+    .preview img { max-width: 100%; }
+    pre { background: #f3f4f6; padding: 12px; border-radius: 6px; overflow: auto; }
+    code { background: #eee; padding: 2px 4px; }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>博客后台</h1>
+  <button onclick="logout()">退出</button>
+</header>
+
+<main>
+  <aside id="postList"></aside>
+
+  <section>
+    <input id="title" class="title" placeholder="文章标题" />
+
+    <div class="toolbar">
+      <button onclick="insert('# ')">H1</button>
+      <button onclick="insert('## ')">H2</button>
+      <button onclick="insert('```\\n代码\\n```')">代码</button>
+      <button onclick="uploadImage()">📷 图片</button>
+      <button onclick="uploadFile()">📎 文件</button>
+      <button onclick="save()">💾 保存</button>
+      <button onclick="remove()">🗑 删除</button>
+    </div>
+
+    <div class="editor">
+      <textarea id="content"></textarea>
+      <div class="preview" id="preview"></div>
+    </div>
+  </section>
+</main>
+
+<!-- 登录 -->
+<div class="login-mask" id="login">
+  <div class="login-box">
+    <h3>管理员登录</h3>
+    <input type="password" id="pwd" placeholder="请输入登录密码" />
+    <button onclick="login()">登录</button>
+  </div>
+</div>
+
+<input type="file" id="file" hidden />
+
+<script>
+let token = localStorage.getItem("token");
+let posts = [];
+let currentId = null;
+
+// ================= 登录 =================
+if (token) document.getElementById("login").style.display = "none";
+
+async function login() {
+  const pwd = document.getElementById("pwd").value;
+  const res = await fetch("/api/login", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ password: pwd })
+  });
+  if (!res.ok) return alert("密码错误");
+  const data = await res.json();
+  token = data.token;
+  localStorage.setItem("token", token);
+  document.getElementById("login").style.display = "none";
+  loadPosts();
+}
+
+function logout() {
+  localStorage.removeItem("token");
+  location.href = "/";     // ✅ 回到首页
+}
+
+
+// ================= 文章 =================
+async function loadPosts() {
+  const res = await fetch("/api/posts");
+  posts = await res.json();
+  const el = document.getElementById("postList");
+  el.innerHTML = "";
+  posts.forEach(p => {
+    const d = document.createElement("div");
+    d.className = "post-item";
+    d.textContent = p.title;
+    d.onclick = () => open(p);
+    el.appendChild(d);
+  });
+}
+
+function open(p) {
+  currentId = p.id;
+  title.value = p.title;
+  content.value = p.content;
+  render();
+}
+
+// ================= 编辑 =================
+content.oninput = render;
+function render() {
+  preview.innerHTML = marked.parse(content.value || "");
+}
+
+function insert(text) {
+  const pos = content.selectionStart;
+  content.value =
+    content.value.slice(0, pos) + text + content.value.slice(pos);
+  render();
+}
+
+// ================= 上传 =================
+function uploadImage() { pickFile("image/*"); }
+function uploadFile() { pickFile("*"); }
+
+function pickFile(type) {
+  const f = document.getElementById("file");
+  f.accept = type;
+  f.onchange = async () => {
+    const form = new FormData();
+    form.append("file", f.files[0]);
+    const res = await fetch("/api/upload", {
+      method: "POST",
+      headers: { Authorization: "Bearer " + token },
+      body: form
+    });
+    const data = await res.json();
+    insert(`![](${data.url})\n`);
+  };
+  f.click();
+}
+
+// 粘贴图片
+content.addEventListener("paste", async e => {
+  const file = [...e.clipboardData.items].find(i => i.type.includes("image"));
+  if (!file) return;
+  const blob = file.getAsFile();
+  const form = new FormData();
+  form.append("file", blob);
+
+  const res = await fetch("/api/upload", {
+    method: "POST",
+    headers: { Authorization: "Bearer " + token },
+    body: form
+  });
+  const data = await res.json();
+  insert(`![](${data.url})\n`);
+});
+
+// ================= 保存 =================
+async function save() {
+  const payload = { title: title.value, content: content.value };
+  const url = currentId ? `/api/posts/${currentId}` : "/api/posts";
+  const method = currentId ? "PUT" : "POST";
+
+  await fetch(url, {
+    method,
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: "Bearer " + token
+    },
+    body: JSON.stringify(payload)
+  });
+  loadPosts();
+}
+
+async function remove() {
+  if (!currentId || !confirm("确定删除？")) return;
+  await fetch(`/api/posts/${currentId}`, {
+    method: "DELETE",
+    headers: { Authorization: "Bearer " + token }
+  });
+  location.reload();
+}
+
+loadPosts();
+</script>
+
+</body>
+</html>
